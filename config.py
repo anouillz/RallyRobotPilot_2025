@@ -26,7 +26,7 @@ NUM_OUTPUTS = 4
 
 VAL_SPLIT = 0.2
 SHUFFLE_DATASET = True
-RANDOM_SEED = 42
+RANDOM_SEED = 412
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
