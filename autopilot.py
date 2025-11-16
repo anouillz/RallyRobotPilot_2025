@@ -9,11 +9,11 @@ import torchvision.transforms as T
 
 from scripts.data_collector import DataCollectionUI
 from model import build_model
-from config import BEST_MODEL_PATH, DEVICE, IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS
-
+from config import  DEVICE, IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS
+BEST_MODEL_PATH = "checkpoints/v5 modelv2 30 epoch/best_model.pth"
 
 class NNMsgProcessor:
-    def __init__(self, threshold=0.5, debug=True):
+    def __init__(self, threshold=0.3, debug=True):
         self.debug = debug
         self.threshold = threshold
 
@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     app = QtWidgets.QApplication(sys.argv)
 
-    nn_brain = NNMsgProcessor(threshold=0.5, debug=True)
+    nn_brain = NNMsgProcessor(threshold=0.3, debug=True)
     data_window = DataCollectionUI(nn_brain.process_message)
     data_window.show()
 

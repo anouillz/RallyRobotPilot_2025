@@ -26,6 +26,7 @@ class SimpleCNN(nn.Module):
         self.classifier = nn.Sequential(
             nn.Flatten(),               
             nn.Linear(32*4*4, 32),
+            nn.Linear(32, 32),
             nn.ReLU(inplace=True),
             nn.Linear(32, num_outputs), # logits (pas de sigmoid ici)
         )

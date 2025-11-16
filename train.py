@@ -1,10 +1,12 @@
+# train.py
 import os
 import random
 import numpy as np
-import matplotlib.pyplot as plt  
+import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.data import DataLoader, random_split
+import torch.backends.cudnn as cudnn
 
 from config import (
     list_npz_files,
@@ -39,8 +41,8 @@ def train_one_epoch(model, criterion, optimizer, dataloader, epoch):
     count_batches = 0
 
     for batch_idx, (images, targets) in enumerate(dataloader):
-        images = images.to(DEVICE)
-        targets = targets.to(DEVICE)  # (B, 4)
+        images = images.to(DEVICE, non_blocking=True)
+        targets = targets.to(DEVICE, non_blocking=True)  # (B, 4)
 
         optimizer.zero_grad()
         outputs = model(images)       # (B, 4)
@@ -72,8 +74,8 @@ def evaluate(model, criterion, dataloader):
 
     with torch.no_grad():
         for images, targets in dataloader:
-            images = images.to(DEVICE)
-            targets = targets.to(DEVICE)
+            images = images.to(DEVICE, non_blocking=True)
+            targets = targets.to(DEVICE, non_blocking=True)
 
             outputs = model(images)
             loss = criterion(outputs, targets)
@@ -86,60 +88,69 @@ def evaluate(model, criterion, dataloader):
 
 
 def main():
+    set_seed(RANDOM_SEED)
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
+    # optimisation cudnn pour CNN avec tailles fixes
+    cudnn.benchmark = True
+
+    print("DEVICE utilisé :", DEVICE)
+    print("torch.cuda.is_available() :", torch.cuda.is_available())
+
+    # Récupération des fichiers .npz
     npz_files = list_npz_files()
     print(f"Fichiers de données trouvés ({len(npz_files)}) :")
     for f in npz_files:
         print("  -", f)
 
-    # Dataset complet (augmentation activée pour le train)
-    full_dataset = NpzDrivingDataset(npz_files, use_augmentation=True)
+    # Un SEUL dataset global, prétraité offline (avec flip pour augmenter le train)
+    full_dataset = NpzDrivingDataset(npz_files, augment_with_flip=True)
 
-    # Split train / val
     dataset_size = len(full_dataset)
     val_size = int(VAL_SPLIT * dataset_size)
     train_size = dataset_size - val_size
 
+    # Split train / val
     if SHUFFLE_DATASET:
-        indices = list(range(dataset_size))
-        np.random.shuffle(indices)
-        train_indices = indices[:train_size]
-        val_indices = indices[train_size:]
-
-        train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
-
-        # Dataset validation SANS augmentation
-        val_full_dataset = NpzDrivingDataset(npz_files, use_augmentation=False)
-        val_dataset = torch.utils.data.Subset(val_full_dataset, val_indices)
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=torch.Generator().manual_seed(RANDOM_SEED),
+        )
     else:
-        # split simple (mais garde les mêmes transforms)
-        train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+        )
 
-    # IMPORTANT sous Windows : num_workers=0
+    # DataLoaders – optimisés pour CUDA
+    common_loader_kwargs = dict(
+        num_workers=2,                
+        pin_memory=(DEVICE == "cuda"),
+        persistent_workers=True,
+    )
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=0,
-        pin_memory=False,
+        **common_loader_kwargs,
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=0,
-        pin_memory=False,
+        **common_loader_kwargs,
     )
 
+    # Modèle + optim
     model = build_model().to(DEVICE)
     criterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     best_val_loss = float("inf")
 
-    # pour le graphique
     train_losses = []
     val_losses = []
     epochs_list = list(range(1, NUM_EPOCHS + 1))
@@ -175,13 +186,9 @@ def main():
     plt.grid(True)
     plt.tight_layout()
 
-    # Sauvegarde dans le dossier checkpoints
     loss_plot_path = os.path.join(CHECKPOINT_DIR, "loss_curve.png")
     plt.savefig(loss_plot_path)
     print(f"Graphique des pertes sauvegardé dans : {loss_plot_path}")
-
-    # Si tu veux afficher la fenêtre :
-    # plt.show()
 
 
 if __name__ == "__main__":
