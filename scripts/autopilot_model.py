@@ -1,143 +1,134 @@
-#!/usr/bin/env python3
-"""Autopilot that runs a trained PyTorch model and sends key commands to the simulator.
-
-Usage:
-  python3 scripts/autopilot_model.py --checkpoint scripts/training/checkpoints/bc_epoch1.pt
-
-The script hooks into the existing `DataCollectionUI` message loop (same as
-`example_autopilot.py`) and calls `data_collector.onCarControlled(direction, start)`
-to push/release controls.
-
-It loads the model class from `scripts/training/models.py` using a file loader so
-it doesn't rely on package imports.
-"""
-import argparse
-import importlib.util
-import sys
-import os
-from types import ModuleType
-
+import os, sys
 import torch
-import torch.nn.functional as F
-from torchvision import transforms
-from PIL import Image
 import numpy as np
-import time
+import collections
+from PyQt6 import QtWidgets
 
+# ---------------------------------------------------------
+# Add project root so imports work
+# ---------------------------------------------------------
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(ROOT)
+
+from scripts.model_c1.cnn_lstm import CNNLSTM
 from data_collector import DataCollectionUI
 
+from PIL import Image
 
-def load_module_from_path(path: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location("model_module", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+MODEL_PATH = "scripts/train/all_best_cnn_lstm.pth"
+THRESHOLD = 0.18
 
+# ---------------------------------------------------------
+# Autopilot CNN + LSTM
+# ---------------------------------------------------------
+class CNNLSTMAutopilot:
+    def __init__(self, model_path=MODEL_PATH,
+                 seq_len=10, img_w=160, img_h=120):
 
-class ModelAutopilot:
-    def __init__(self, checkpoint_path: str, model_file: str, device: str = None, img_size=(160, 120), threshold=0.5):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.img_size = img_size  # (width, height)
-        self.threshold = float(threshold)
+        self.seq_len = seq_len
+        self.img_w = img_w
+        self.img_h = img_h
 
-        # load model code
-        mod = load_module_from_path(model_file)
-        # expect class CNNLSTMPolicy in the module
-        if not hasattr(mod, 'CNNLSTMPolicy'):
-            raise RuntimeError(f"Model file {model_file} does not define CNNLSTMPolicy")
+        # Keep last 10 frames
+        self.frame_buffer = collections.deque(maxlen=seq_len)
 
-        ModelClass = getattr(mod, 'CNNLSTMPolicy')
-        self.model = ModelClass(use_lstm=False)
-        # load checkpoint
-        ckpt = torch.load(checkpoint_path, map_location=self.device)
-        if 'model_state' in ckpt:
-            state = ckpt['model_state']
-        else:
-            state = ckpt
-        self.model.load_state_dict(state)
-        self.model.to(self.device)
+        # Select device
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print("Autopilot device:", self.device)
+
+        # Load model
+        self.model = CNNLSTM(num_actions=4).to(self.device)
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
 
-        # transform
-        self.transform = transforms.Compose([
-            transforms.Resize((self.img_size[1], self.img_size[0])),
-            transforms.ToTensor(),
-        ])
-        
-        # recorded control order: (W, S, A, D)
-        self.prev = [0, 0, 0, 0]
-        self.dir_map = {0: 'forward', 1: 'back', 2: 'left', 3: 'right'}
+    # -----------------------------------------------------
+    # PREPROCESS IMAGE — EXACT SAME AS TRAINING
+    # -----------------------------------------------------
+    def preprocess_image(self, img):
+        """
+        img: numpy array (H, W, 3) already in RGB from the simulator.
+        """
 
-    def nn_infer(self, message):
-        img = getattr(message, 'image', None)
-        if img is None:
-            return []
+        # Convert numpy → PIL
+        img = Image.fromarray(img)
 
-        if isinstance(img, np.ndarray):
-            pil = Image.fromarray(img)
-        else:
-            pil = Image.fromarray(np.asarray(img))
+        # Resize like in training
+        img = img.resize((self.img_w, self.img_h), Image.BILINEAR)
 
-        x = self.transform(pil).unsqueeze(0).to(self.device)
+        # Back to numpy, normalized to [0,1]
+        img = np.array(img, dtype=np.float32) / 255.0
+
+        return img  # shape: (H,W,3)
+
+    # -----------------------------------------------------
+    # MODEL INFERENCE
+    # -----------------------------------------------------
+    def nn_infer(self):
+        if len(self.frame_buffer) < self.seq_len:
+            return None  # not enough frames yet
+
+        # (seq, H, W, 3) → (1, seq, H, W, 3)
+        frames = np.array(self.frame_buffer, dtype=np.float32)
+        frames = frames[np.newaxis, ...]
+
+        x = torch.from_numpy(frames).to(self.device)
+
         with torch.no_grad():
-            preds = self.model(x)
-            # preds are sigmoids
-            probs = preds.squeeze(0).cpu().numpy()
+            outputs = self.model(x)[0].cpu().numpy()
 
-        # binary decisions
-        decisions = (probs >= self.threshold).astype(int).tolist()
+        # Debug prints so we know what the model outputs
+        print("raw outputs:", outputs)
 
-        # Debug print: probabilities and decisions
-        try:
-            print(f"[Autopilot] probs={probs.tolist()} threshold={self.threshold} -> decisions={decisions}")
-        except Exception:
-            pass
+        w, s, a, d = outputs
 
-        commands = []
-        # emit push/release based on change from prev
-        for i, val in enumerate(decisions):
-            if val != self.prev[i]:
-                # if new val is 1 -> push, else release
-                cmd = (self.dir_map[i], bool(val))
-                commands.append(cmd)
-        self.prev = decisions
-        return commands
+        # Use softer threshold (model outputs are often around 0.2–0.8)
+        return {
+            "forward": w > THRESHOLD,
+            "back":    s > THRESHOLD,
+            "left":    a > THRESHOLD,
+            "right":   d > THRESHOLD,
+        }
 
-    def process_message(self, message, data_collector: DataCollectionUI):
-        commands = self.nn_infer(message)
-        for direction, start in commands:
-            # Print every command that will be sent to the main UI/simulator
-            now = time.time()
-            action = 'push' if start else 'release'
-            print(f"[Autopilot] {now:.3f} -> sending: {action} {direction}")
-            data_collector.onCarControlled(direction, start)
+    # -----------------------------------------------------
+    # CALLBACK FOR SIMULATOR — CALLED FOR EACH FRAME
+    # -----------------------------------------------------
+    def process_message(self, message, data_collector):
+        img = message.image  # raw numpy RGB image
+
+        # Preprocess
+        frame = self.preprocess_image(img)
+        self.frame_buffer.append(frame)
+
+        # Run inference
+        controls = self.nn_infer()
+        if controls is None:
+            return
+
+        # Send commands to simulator
+        for key, pressed in controls.items():
+            data_collector.onCarControlled(key, pressed)
 
 
-def main():
-    p = argparse.ArgumentParser(description='Run model-based autopilot')
-    p.add_argument('--checkpoint', required=True, help='Path to model checkpoint (.pt)')
-    p.add_argument('--model-file', default='scripts/training/models.py', help='Path to model class file')
-    p.add_argument('--width', type=int, default=160, help='Input image width')
-    p.add_argument('--height', type=int, default=120, help='Input image height')
-    p.add_argument('--threshold', type=float, default=0.5, help='Sigmoid threshold')
-    p.add_argument('--device', default=None, help='torch device string (e.g. cpu or cuda:0)')
-    args = p.parse_args()
-
-    # instantiate UI and autopilot
-    autopilot = ModelAutopilot(args.checkpoint, args.model_file, device=args.device, img_size=(args.width, args.height), threshold=args.threshold)
+# ---------------------------------------------------------
+# MAIN APP
+# ---------------------------------------------------------
+if __name__ == "__main__":
 
     import sys
-    from PyQt6 import QtWidgets
-
     def except_hook(cls, exception, traceback):
         sys.__excepthook__(cls, exception, traceback)
     sys.excepthook = except_hook
 
     app = QtWidgets.QApplication(sys.argv)
+
+    # Load autopilot model
+    autopilot = CNNLSTMAutopilot(
+        model_path=MODEL_PATH,
+        seq_len=10
+    )
+
+    # Create DataCollector window
     data_window = DataCollectionUI(autopilot.process_message)
     data_window.show()
+
     app.exec()
-
-
-if __name__ == '__main__':
-    main()
