@@ -1,0 +1,6 @@
+{
+    "seq_len": 15,
+    "hidden_size": 256,
+    "dropout": 0.2,
+    "learning_rate": 0.00005
+}
