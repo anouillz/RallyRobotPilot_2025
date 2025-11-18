@@ -23,12 +23,13 @@ def flip_controls(ctrl: np.ndarray) -> np.ndarray:
 
 class Preprocessor:
     """
-    Pipeline DÉTERMINISTE :
+    Pipeline DÉTERMINISTE configurable :
       - crop haut / bas
-      - réduction (downscale)
-      - resize final
+      - downscale
+      - grayscale optionnel
+      - resize
       - normalisation
-    AUCUN flip aléatoire ici.
+    Aucun flip ici (géré dans le dataset).
     """
 
     def __init__(
@@ -38,6 +39,7 @@ class Preprocessor:
         enable_downscale: bool = False,
         enable_resize: bool = False,
         enable_normalize: bool = False,
+        enable_grayscale: bool = False,
         crop_top_ratio: float = 0.35,
         crop_bottom_ratio: float = 0.15,
         downscale_factor: int = 2,
@@ -47,15 +49,20 @@ class Preprocessor:
         self.enable_downscale = enable_downscale
         self.enable_resize = enable_resize
         self.enable_normalize = enable_normalize
+        self.enable_grayscale = enable_grayscale
 
         self.crop_top_ratio = crop_top_ratio
         self.crop_bottom_ratio = crop_bottom_ratio
         self.downscale_factor = downscale_factor
 
+        # Resize final
         self.resize_transform = T.Resize((IMAGE_HEIGHT, IMAGE_WIDTH))
+
+        # Normalisation adaptée automatiquement selon nb canaux
+        channels = 1 if enable_grayscale else NUM_CHANNELS
         self.normalize_transform = T.Normalize(
-            mean=[0.5] * NUM_CHANNELS,
-            std=[0.5] * NUM_CHANNELS,
+            mean=[0.5] * channels,
+            std=[0.5] * channels
         )
 
     # --------- CROP haut / bas ----------
@@ -77,14 +84,13 @@ class Preprocessor:
         new_h = max(1, h // self.downscale_factor)
         return image.resize((new_w, new_h), Image.BILINEAR)
 
-    # --------- PIPELINE complet ----------
+    # --------- PIPELINE principal ----------
     def process(self, image_pil: Image.Image, controls_np: np.ndarray):
         """
-        Retourne (image_tensor, controls_tensor)
-        Le flip éventuel est géré DEHORS (dans le dataset ou l'autopilot).
+        Retourne : image_tensor, controls_tensor
         """
 
-        # Crop haut/bas
+        # Crop
         if self.enable_crop_top or self.enable_crop_bottom:
             image_pil = self.crop_image(image_pil)
 
@@ -92,12 +98,16 @@ class Preprocessor:
         if self.enable_downscale:
             image_pil = self.downscale_image(image_pil)
 
-        # Resize final
+        # Grayscale
+        if self.enable_grayscale:
+            image_pil = image_pil.convert("L")   # 1 canal
+
+        # Resize
         if self.enable_resize:
             image_pil = self.resize_transform(image_pil)
 
         # ToTensor
-        image_tensor = T.ToTensor()(image_pil)
+        image_tensor = T.ToTensor()(image_pil)  # automatique pour RGB ou L
 
         # Normalisation
         if self.enable_normalize:

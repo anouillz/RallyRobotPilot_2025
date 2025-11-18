@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/robin.butikofer/RallyRobotPilot_2025/train.py", line 238, in <module>
+    main()
+  File "/home/robin.butikofer/RallyRobotPilot_2025/train.py", line 177, in main
+    sampleimg,  = full_dataset[0]
+    ^^^^^^^^^^
+ValueError: too many values to unpack (expected 1)

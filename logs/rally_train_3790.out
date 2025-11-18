@@ -1,0 +1,148 @@
+DEVICE utilisé : cuda
+torch.cuda.is_available() : True
+GPU : NVIDIA A2
+Fichiers de données trouvés (5) :
+  - record_0.npz
+  - record_1.npz
+  - record_2.npz
+  - record_3.npz
+  - record_4.npz
+Found 5 .npz files.
+Dataset prêt : 15713 samples (shift=5, flip=No).
+Total samples: 15713 (train=12571, val=3142)
+Using num_workers = 8
+AMP désactivé (CPU ou pas de CUDA).
+===== Epoch 1/20 =====
+[Epoch 1][Batch 50] loss: 0.7051
+[Epoch 1][Batch 100] loss: 0.6789
+[Epoch 1][Batch 150] loss: 0.6031
+Train loss: 0.6246
+Validation loss: 0.3736
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 2/20 =====
+[Epoch 2][Batch 50] loss: 0.4444
+[Epoch 2][Batch 100] loss: 0.4176
+[Epoch 2][Batch 150] loss: 0.3927
+Train loss: 0.4109
+Validation loss: 0.2897
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 3/20 =====
+[Epoch 3][Batch 50] loss: 0.3762
+[Epoch 3][Batch 100] loss: 0.3559
+[Epoch 3][Batch 150] loss: 0.3453
+Train loss: 0.3578
+Validation loss: 0.2824
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 4/20 =====
+[Epoch 4][Batch 50] loss: 0.3401
+[Epoch 4][Batch 100] loss: 0.3439
+[Epoch 4][Batch 150] loss: 0.3310
+Train loss: 0.3364
+Validation loss: 0.2765
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 5/20 =====
+[Epoch 5][Batch 50] loss: 0.3237
+[Epoch 5][Batch 100] loss: 0.3256
+[Epoch 5][Batch 150] loss: 0.3260
+Train loss: 0.3231
+Validation loss: 0.2747
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 6/20 =====
+[Epoch 6][Batch 50] loss: 0.3113
+[Epoch 6][Batch 100] loss: 0.3117
+[Epoch 6][Batch 150] loss: 0.3217
+Train loss: 0.3135
+Validation loss: 0.2712
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 7/20 =====
+[Epoch 7][Batch 50] loss: 0.3085
+[Epoch 7][Batch 100] loss: 0.3069
+[Epoch 7][Batch 150] loss: 0.3046
+Train loss: 0.3064
+Validation loss: 0.2671
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 8/20 =====
+[Epoch 8][Batch 50] loss: 0.2897
+[Epoch 8][Batch 100] loss: 0.2993
+[Epoch 8][Batch 150] loss: 0.3041
+Train loss: 0.2980
+Validation loss: 0.2687
+===== Epoch 9/20 =====
+[Epoch 9][Batch 50] loss: 0.2969
+[Epoch 9][Batch 100] loss: 0.2948
+[Epoch 9][Batch 150] loss: 0.2944
+Train loss: 0.2943
+Validation loss: 0.2649
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 10/20 =====
+[Epoch 10][Batch 50] loss: 0.2895
+[Epoch 10][Batch 100] loss: 0.2856
+[Epoch 10][Batch 150] loss: 0.2892
+Train loss: 0.2885
+Validation loss: 0.2589
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 11/20 =====
+[Epoch 11][Batch 50] loss: 0.2822
+[Epoch 11][Batch 100] loss: 0.2814
+[Epoch 11][Batch 150] loss: 0.2747
+Train loss: 0.2808
+Validation loss: 0.2564
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 12/20 =====
+[Epoch 12][Batch 50] loss: 0.2767
+[Epoch 12][Batch 100] loss: 0.2760
+[Epoch 12][Batch 150] loss: 0.2683
+Train loss: 0.2725
+Validation loss: 0.2573
+===== Epoch 13/20 =====
+[Epoch 13][Batch 50] loss: 0.2703
+[Epoch 13][Batch 100] loss: 0.2709
+[Epoch 13][Batch 150] loss: 0.2740
+Train loss: 0.2701
+Validation loss: 0.2564
+>>> Nouveau meilleur modèle sauvegardé : checkpoints/best_model.pth
+===== Epoch 14/20 =====
+[Epoch 14][Batch 50] loss: 0.2612
+[Epoch 14][Batch 100] loss: 0.2705
+[Epoch 14][Batch 150] loss: 0.2582
+Train loss: 0.2623
+Validation loss: 0.2589
+===== Epoch 15/20 =====
+[Epoch 15][Batch 50] loss: 0.2573
+[Epoch 15][Batch 100] loss: 0.2530
+[Epoch 15][Batch 150] loss: 0.2598
+Train loss: 0.2572
+Validation loss: 0.2583
+===== Epoch 16/20 =====
+[Epoch 16][Batch 50] loss: 0.2513
+[Epoch 16][Batch 100] loss: 0.2517
+[Epoch 16][Batch 150] loss: 0.2544
+Train loss: 0.2522
+Validation loss: 0.2621
+===== Epoch 17/20 =====
+[Epoch 17][Batch 50] loss: 0.2545
+[Epoch 17][Batch 100] loss: 0.2461
+[Epoch 17][Batch 150] loss: 0.2404
+Train loss: 0.2479
+Validation loss: 0.2666
+===== Epoch 18/20 =====
+[Epoch 18][Batch 50] loss: 0.2415
+[Epoch 18][Batch 100] loss: 0.2421
+[Epoch 18][Batch 150] loss: 0.2369
+Train loss: 0.2419
+Validation loss: 0.2680
+===== Epoch 19/20 =====
+[Epoch 19][Batch 50] loss: 0.2313
+[Epoch 19][Batch 100] loss: 0.2332
+[Epoch 19][Batch 150] loss: 0.2388
+Train loss: 0.2360
+Validation loss: 0.2736
+===== Epoch 20/20 =====
+[Epoch 20][Batch 50] loss: 0.2353
+[Epoch 20][Batch 100] loss: 0.2348
+[Epoch 20][Batch 150] loss: 0.2353
+Train loss: 0.2324
+Validation loss: 0.2806
+Entraînement terminé.
+Meilleur loss de validation : 0.2564
+Graphique des pertes sauvegardé dans : checkpoints/loss_curve.png

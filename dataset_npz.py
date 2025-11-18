@@ -2,7 +2,6 @@
 import glob
 import numpy as np
 from PIL import Image
-
 import torch
 from torch.utils.data import Dataset
 
@@ -12,21 +11,24 @@ from preprocess import Preprocessor, flip_image, flip_controls
 class NpzDrivingDataset(Dataset):
     """
     Dataset pour fichiers .npz contenant :
-      - images : (N, H, W, 3) uint8
-      - controls : (N, 4) (F,B,L,R)
+      - images : (N, H, W, 3)
+      - controls : (N, 4)
 
-    Le prétraitement (crop, downscale, resize, normalisation) est
-    fait UNE SEULE FOIS au chargement, puis stocké en tensors.
-
-    Si augment_with_flip=True :
-      -> pour chaque sample, on ajoute la version mirroir (flip horizontal)
-         avec commandes L/R inversées.
+    Options :
+      - augment_with_flip=True : ajoute images mirrored
+      - temporal_shift=k       : X[i] -> Y[i+k]
     """
 
-    def __init__(self, npz_paths, augment_with_flip: bool = True):
+    def __init__(
+        self,
+        npz_paths,
+        augment_with_flip=False,
+        temporal_shift=0,
+        preprocessor: Preprocessor | None = None
+    ):
         super().__init__()
 
-        # npz_paths peut être une string (pattern) ou une liste
+        # npz_paths peut être une string ou une liste
         if isinstance(npz_paths, str):
             self.files = sorted(glob.glob(npz_paths))
         else:
@@ -38,18 +40,18 @@ class NpzDrivingDataset(Dataset):
         print(f"Found {len(self.files)} .npz files.")
 
         self.augment_with_flip = augment_with_flip
+        self.temporal_shift = temporal_shift
 
-        # Preprocessor DÉTERMINISTE
-        self.preprocessor = Preprocessor()
+        # Préprocessor (si None → défaut)
+        self.preprocessor = preprocessor if preprocessor is not None else Preprocessor()
 
         images_tensors = []
         controls_tensors = []
 
-        # ---------- Chargement + prétraitement OFFLINE ----------
+        # ---------- Chargement + prétraitement  ----------
         for file in self.files:
             data = np.load(file, allow_pickle=False)
 
-            # Clés possibles dans le .npz
             if "images" in data and "controls" in data:
                 imgs = data["images"]
                 ctrs = data["controls"]
@@ -58,17 +60,17 @@ class NpzDrivingDataset(Dataset):
                 ctrs = data["labels"]
             else:
                 raise ValueError(
-                    f"{file} ne contient pas 'images'/'controls' "
-                    f"ni 'features'/'labels'. Clés: {list(data.keys())}"
+                    f"{file} ne contient pas les clés attendues. Clés trouvées: {list(data.keys())}"
                 )
 
-            if len(imgs) != len(ctrs):
-                raise ValueError(f"Incohérence images/controls dans {file}")
+            N = len(imgs)
+            max_valid = N - self.temporal_shift  # nombre de samples utilisables
 
-            for i in range(len(imgs)):
-                img_np = imgs[i].astype(np.uint8)       # (H, W, 3)
-                ctr_np = ctrs[i].astype(np.float32)     # (4,)
+            for i in range(max_valid):
+                img_np = imgs[i].astype(np.uint8)
+                ctr_np = ctrs[i + self.temporal_shift].astype(np.float32)
 
+                # Image PIL
                 pil_img = Image.fromarray(img_np, mode="RGB")
 
                 # Version normale
@@ -76,7 +78,7 @@ class NpzDrivingDataset(Dataset):
                 images_tensors.append(img_t)
                 controls_tensors.append(ctr_t)
 
-                # Version mirroir (si demandé)
+                # Version flipped si demandé
                 if self.augment_with_flip:
                     pil_flip = flip_image(pil_img)
                     ctr_flip = flip_controls(ctr_np)
@@ -84,12 +86,13 @@ class NpzDrivingDataset(Dataset):
                     images_tensors.append(img_t_f)
                     controls_tensors.append(ctr_t_f)
 
-        self.images = torch.stack(images_tensors, dim=0)       # (N_total, C, H, W)
-        self.controls = torch.stack(controls_tensors, dim=0)   # (N_total, 4)
+        # Stack final
+        self.images = torch.stack(images_tensors, dim=0)
+        self.controls = torch.stack(controls_tensors, dim=0)
 
         print(
             f"Dataset prêt : {self.images.shape[0]} samples "
-            f"({'avec' if self.augment_with_flip else 'sans'} flip)."
+            f"(shift={self.temporal_shift}, flip={'Yes' if self.augment_with_flip else 'No'})."
         )
 
     def __len__(self):

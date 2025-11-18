@@ -1,0 +1,13 @@
+DEVICE utilisé : cuda
+torch.cuda.is_available() : True
+GPU : NVIDIA A2
+Fichiers de données trouvés (5) :
+  - record_0.npz
+  - record_1.npz
+  - record_2.npz
+  - record_3.npz
+  - record_4.npz
+Found 5 .npz files.
+Dataset prêt : 15713 samples (shift=5, flip=No).
+Total samples: 15713 (train=12571, val=3142)
+Using num_workers = 8

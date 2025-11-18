@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/robin.butikofer/RallyRobotPilot_2025/train.py", line 238, in <module>
+    main()
+  File "/home/robin.butikofer/RallyRobotPilot_2025/train.py", line 178, in main
+    C, H, W = full_dataset[0].shape
+              ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'tuple' object has no attribute 'shape'
