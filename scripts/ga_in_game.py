@@ -7,12 +7,12 @@ import math
 from pathlib import Path
 
 # ================= CONFIGURATION =================
-SEGMENT_ID = 9                         
+SEGMENT_ID = 4                         
 POPULATION_SIZE = 100                    
 ELITE_SIZE = 15                         
 MUTATION_RATE = 0.6                    # Increased for more diversity
 MUTATION_STRENGTH = 0.8                # Increased for stronger mutations
-GENERATIONS = 30
+GENERATIONS = 20
 SEGMENT_FOLDER = "genetic_data/records/SimpleTrack/segments"
 OUTPUT_BEST = Path("genetic_data/best_segments/SimpleTrack")
 OUTPUT_BEST.mkdir(parents=True, exist_ok=True)
@@ -31,14 +31,17 @@ class GhostCar(Entity):
         self.alpha = 0.6
 
     def update(self):
-        step = self.ga.global_step
-        if step < len(self.path):
-            pos = self.path[int(step)]
-            self.position = Vec3(*pos)
-        else:
-            # Loop
-            pos = self.path[int(step) % len(self.path)]
-            self.position = Vec3(*pos)
+        idx = int(self.ga.global_step) % len(self.path)
+        pos = self.path[idx]
+        self.position = Vec3(*pos)
+        # Calculate rotation to face the next position
+        next_idx = (idx + 1) % len(self.path)
+        next_pos = self.path[next_idx]
+        dx = next_pos[0] - pos[0]
+        dz = next_pos[2] - pos[2]
+        if dx != 0 or dz != 0:
+            angle = math.degrees(math.atan2(dx, dz))
+            self.rotation_y = angle
 
 
 class GAInGame:
@@ -62,6 +65,13 @@ class GAInGame:
         self.car.position = Vec3(*self.ref["positions"][0])
         self.car.rotation_y = self.ref["angles"][0]
 
+        # Set checkpoint handler to start from this segment
+        if self.car.checkpoint_handler:
+            self.car.checkpoint_handler.next_checkpoint_index = self.segment_id
+
+        # Disable checkpoint checking for GA to avoid order errors
+        self.car.disable_checkpoint_check = True
+
 
         print(f"GA IN-GAME STARTED — Segment {self.segment_id}")
 
@@ -80,9 +90,13 @@ class GAInGame:
         if file.exists():
             with open(file) as f:
                 cps = json.load(f)
-                for cp in cps:
+                # Select checkpoints for this segment: seg 0 uses 0-1, seg 1 uses 1-2, etc.
+                start_idx = self.segment_id
+                end_idx = self.segment_id + 2
+                selected_cps = cps[start_idx:end_idx] if end_idx <= len(cps) else cps[start_idx:]
+                for cp in selected_cps:
                     cp['passed'] = False
-                return cps
+                return selected_cps
         else:
             return []
 
