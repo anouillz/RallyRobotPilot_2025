@@ -22,7 +22,7 @@ from config import (
     BEST_MODEL_PATH,
     PRINT_EVERY,
 )
-from dataset_npz import NpzDrivingDataset
+from dataset_npz import DrivingDataset
 from model import build_model
 
 
@@ -192,17 +192,13 @@ def main():
         print("GPU :", torch.cuda.get_device_name(0))
 
     # Récupération des fichiers .npz
-    npz_files = list_npz_files()
-    print(f"Fichiers de données trouvés ({len(npz_files)}) :")
-    for f in npz_files:
-        print("  -", f)
+    path_files = "./"
 
     # Dataset global, prétraité offline (avec flip si tu veux l'augmentation)
-    full_dataset = NpzDrivingDataset(npz_files, augment_with_flip=False,temporal_shift=1)
+    full_dataset = DrivingDataset(path_files ,augment_flip=True)
 
-    dataset_size = len(full_dataset)
-    val_size = int(VAL_SPLIT * dataset_size)
-    train_size = dataset_size - val_size
+    val_size = int(VAL_SPLIT * len(full_dataset))
+    train_size = len(full_dataset) - val_size
 
     # Split train / val
     if SHUFFLE_DATASET:

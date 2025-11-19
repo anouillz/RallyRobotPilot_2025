@@ -5,7 +5,8 @@ from rallyrobopilot import *
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6 import uic
-
+import numpy as np
+import cv2
 import pickle
 import lzma
 
@@ -58,6 +59,14 @@ class DataCollectionUI(QtWidgets.QMainWindow):
         if self.recording:
             if not self.saveImgCheckBox.isChecked():
                 msg.image = None
+            else:
+                if getattr(msg, "image", None) is not None:
+                    try:
+                        h, w = msg.image.shape[:2]
+                        if (h, w) != (128, 128):
+                            msg.image = cv2.resize(msg.image, (128, 128), interpolation=cv2.INTER_AREA)
+                    except Exception as e:
+                        print("[X] Erreur lors du redimensionnement de l'image :", e)
 
             self.recorded_data.append(msg)
             self.nbrSnapshotSaved.setText(str(len(self.recorded_data)))

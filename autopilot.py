@@ -9,37 +9,42 @@ import torchvision.transforms as T
 
 from scripts.data_collector import DataCollectionUI
 from model import build_model
-from config import  DEVICE, IMAGE_HEIGHT, IMAGE_WIDTH, NUM_CHANNELS
-BEST_MODEL_PATH = "checkpoints/v5 modelv2 30 epoch/best_model.pth"
+from config import DEVICE, IMAGE_RESIZED_DIMENSIONS
+
+BEST_MODEL_PATH = "checkpoints/v9/best_model.pth"
+
 
 class NNMsgProcessor:
-    def __init__(self, threshold=0.3, debug=True):
+    def __init__(self, threshold=0.5, debug=True, n_frames=3):
         self.debug = debug
         self.threshold = threshold
+        self.n_frames = n_frames
 
-        # Chargement du modèle
-        self.model = build_model().to(DEVICE)
+        # Charger le modèle (3 * n_frames canaux)
+        input_shape = (
+            3 * n_frames,
+            IMAGE_RESIZED_DIMENSIONS[1],
+            IMAGE_RESIZED_DIMENSIONS[0],
+        )
+        self.model = build_model(input_shape).to(DEVICE)
         self.model.load_state_dict(torch.load(BEST_MODEL_PATH, map_location=DEVICE))
         self.model.eval()
 
-        # Même preprocessing que pour l'entraînement (sans augmentation)
+        # Préprocessing image (une seule frame)
         self.transform = T.Compose([
-            T.Resize((IMAGE_HEIGHT, IMAGE_WIDTH)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.5] * NUM_CHANNELS, std=[0.5] * NUM_CHANNELS),
+            T.Resize((IMAGE_RESIZED_DIMENSIONS[1], IMAGE_RESIZED_DIMENSIONS[0])),
+            T.ToTensor(),  # -> (3, H, W), float32 [0,1]
         ])
 
-        # État précédent des décisions [F, B, L, R]
-        self.prev_decisions = np.array([False, False, False, False], dtype=bool)
+        # Buffer des dernières frames (tensors 3xHxW)
+        self.frame_buffer = []
 
-        # Ordre des commandes correspondant aux sorties du réseau
+        # États précédents : [F, B, L, R]
+        self.prev_decisions = np.array([False, False, False, False], dtype=bool)
         self.commands = ["forward", "back", "left", "right"]
 
     def preprocess_image(self, message):
-        """
-        message : snapshot avec un attribut .image
-        .image doit être un np.array (H, W, 3) uint8 (RGB)
-        """
+        """Retourne un tensor (3, H, W) pour une seule frame."""
         frame = getattr(message, "image", None)
         if frame is None:
             return None
@@ -48,60 +53,68 @@ class NNMsgProcessor:
             frame = np.array(frame)
 
         frame = frame.astype(np.uint8)
-        image = Image.fromarray(frame, mode="RGB")
-
-        tensor = self.transform(image).unsqueeze(0).to(DEVICE)  # (1, C, H, W)
+        image = Image.fromarray(frame)  # RGB
+        tensor = self.transform(image)  # (3, H, W)
         return tensor
 
+    def _make_input_tensor(self, frame_tensor: torch.Tensor) -> torch.Tensor | None:
+        """
+        Ajoute la frame au buffer et construit un tensor (1, 3*n_frames, H, W).
+        Si on n'a pas encore assez de frames, on répète la première.
+        """
+        self.frame_buffer.append(frame_tensor)
+        if len(self.frame_buffer) > self.n_frames:
+            self.frame_buffer.pop(0)
+
+        if len(self.frame_buffer) == 0:
+            return None
+
+        # Si pas encore assez de frames, on pad avec la première frame
+        if len(self.frame_buffer) < self.n_frames:
+            first = self.frame_buffer[0]
+            num_missing = self.n_frames - len(self.frame_buffer)
+            frames = [first] * num_missing + self.frame_buffer
+        else:
+            frames = self.frame_buffer
+
+        # frames : liste de n_frames tensors (3, H, W)
+        stacked = torch.cat(frames, dim=0)          # (3*n_frames, H, W)
+        return stacked.unsqueeze(0).to(DEVICE)      # (1, 3*n_frames, H, W)
+
     def nn_infer(self, message):
-        """
-        Renvoie:
-          probs     : np.array shape (4,) float32 in [0,1]
-          decisions : np.array shape (4,) bool
-          to_send   : list[(command:str, bool)]
-        """
-        img_tensor = self.preprocess_image(message)
+        frame_tensor = self.preprocess_image(message)
+        if frame_tensor is None:
+            return None, None, []
+
+        img_tensor = self._make_input_tensor(frame_tensor)
         if img_tensor is None:
-            # Pas de nouvelle commande si pas d'image
             return None, None, []
 
         with torch.no_grad():
-            logits = self.model(img_tensor)      # (1, 4)
-            probs = torch.sigmoid(logits)[0]     # (4,)
+            logits = self.model(img_tensor)
+            probs = torch.sigmoid(logits)[0]
 
-        # Tensor -> numpy
         probs_np = probs.cpu().numpy()
+        decisions = probs_np > self.threshold
 
-        # Décision booléenne par seuil
-        decisions = probs_np > self.threshold   # np.array bool (4,)
-
-        # Calculer les changements par rapport à l'état précédent
         to_send = []
         for i, cmd in enumerate(self.commands):
             if decisions[i] != self.prev_decisions[i]:
-                # True -> key down, False -> key up
                 to_send.append((cmd, bool(decisions[i])))
 
-        # Sauvegarder l'état courant pour la prochaine frame
         self.prev_decisions = decisions.copy()
 
         if self.debug:
-            # Affichage au format de ton exemple
-            probs_print = np.round(probs_np, 3)
-            decisions_print = [bool(d) for d in decisions]
-            print(f"probs={probs_print} decisions={decisions_print} to_send={to_send}")
+            print(
+                f"probs={np.round(probs_np, 3)} "
+                f"decisions={[bool(d) for d in decisions]} "
+                f"to_send={to_send}"
+            )
 
         return probs_np, decisions, to_send
 
     def process_message(self, message, data_collector):
-        """
-        Callback pour DataCollectionUI :
-        - message : sensing snapshot
-        - data_collector : interface pour envoyer les commandes
-        """
         _, _, to_send = self.nn_infer(message)
-
-        # On envoie uniquement les changements
         for command, start in to_send:
             data_collector.onCarControlled(command, start)
 
@@ -113,7 +126,7 @@ if __name__ == "__main__":
 
     app = QtWidgets.QApplication(sys.argv)
 
-    nn_brain = NNMsgProcessor(threshold=0.3, debug=True)
+    nn_brain = NNMsgProcessor(threshold=0.4, debug=True, n_frames=1)
     data_window = DataCollectionUI(nn_brain.process_message)
     data_window.show()
 

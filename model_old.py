@@ -1,41 +1,57 @@
-# model.py
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from config import NUM_OUTPUTS, NUM_CHANNELS
 
-
-class SimpleCNN(nn.Module):
-    """
-    CNN très simple pour prédire 4 commandes (F, B, L, R)
-    à partir d'une image RGB prétraitée.
-    """
-    def __init__(self, num_outputs=NUM_OUTPUTS):
+class DrivingCNN(nn.Module):
+    def __init__(self, input_shape):
         super().__init__()
+        C, H, W = input_shape
 
         self.features = nn.Sequential(
-            nn.Conv2d(NUM_CHANNELS, 16, kernel_size=5, stride=2, padding=2),
-            nn.ReLU(inplace=True),
-
-            nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2),
-            nn.ReLU(inplace=True),
-
-            nn.AdaptiveAvgPool2d((4, 4)),  # -> (batch, 32, 4, 4)
+            nn.Conv2d(C, 24, kernel_size=5, stride=2),
+            nn.BatchNorm2d(24),
+            nn.ReLU(),
+            nn.Conv2d(24, 36, kernel_size=5, stride=2),
+            nn.BatchNorm2d(36),
+            nn.ReLU(),
+            nn.Conv2d(36, 48, kernel_size=5, stride=2),
+            nn.BatchNorm2d(48),
+            nn.ReLU(),
+            nn.Conv2d(48, 64, kernel_size=3, stride=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.Conv2d(64, 50, kernel_size=3, stride=1),
+            nn.BatchNorm2d(50),
+            nn.ReLU(),
         )
 
-        self.classifier = nn.Sequential(
-            nn.Flatten(),               
-            nn.Linear(32*4*4, 32),
-            nn.Linear(32, 32),
-            nn.ReLU(inplace=True),
-            nn.Linear(32, num_outputs), # logits (pas de sigmoid ici)
+        with torch.no_grad():
+            dummy = torch.zeros(1, *input_shape)
+            out_feat = self.features(dummy)
+            n_flat = out_feat.view(1, -1).shape[1]
+
+        self.mlp = nn.Sequential(
+            nn.Linear(n_flat, 100),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+
+            nn.Linear(100, 50),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+
+            nn.Linear(50, 10),
+            nn.ReLU(),
+
+            nn.Linear(10, 4)
         )
 
     def forward(self, x):
         x = self.features(x)
-        x = self.classifier(x)
+        x = torch.flatten(x, 1)
+        x = self.mlp(x)
         return x
 
-
-def build_model(num_outputs=NUM_OUTPUTS):
-    return SimpleCNN(num_outputs=num_outputs)
+def build_model(input_shape):
+    # Mets 1 si tu utilises les images en N&B, 3 si tu repasses en RGB
+    return DrivingCNN(input_shape=input_shape)
