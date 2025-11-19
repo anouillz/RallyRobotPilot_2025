@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 
 # ================= CONFIGURATION =================
-SEGMENT_ID = 4                         
+SEGMENT_ID = 16                         
 POPULATION_SIZE = 100                    
 ELITE_SIZE = 15                         
 MUTATION_RATE = 0.6                    # Increased for more diversity
@@ -17,6 +17,20 @@ SEGMENT_FOLDER = "genetic_data/records/SimpleTrack/segments"
 OUTPUT_BEST = Path("genetic_data/best_segments/SimpleTrack")
 OUTPUT_BEST.mkdir(parents=True, exist_ok=True)
 TRACK_NAME = "SimpleTrack"
+
+# Data collection for plotting
+STATS_FILE = Path(f"genetic_data/stats/segment_{SEGMENT_ID}_stats.json")
+STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Will store: frames_saved, fitness_history, max_dev_history
+stats = {
+    "segment_id": SEGMENT_ID,
+    "original_frames": 0,
+    "fitness_history": [],
+    "max_dev_history": [],
+    "best_frames": None,
+    "frames_saved": None
+}
 # ================================================
 
 
@@ -50,6 +64,8 @@ class GAInGame:
         self.segment_id = SEGMENT_ID
         self.track_name = TRACK_NAME
         self.ref = self.load_reference()
+        # stats - Save original frame count for stats
+        stats["original_frames"] = len(self.ref["controls"])
         self.checkpoints = self.load_checkpoints()
         self.population = self.create_population()
         self.generation = 0
@@ -227,6 +243,20 @@ class GAInGame:
 
     def update(self):
         if self.generation >= GENERATIONS:
+            # Save final stats when done
+            stats = {
+                "segment_id": self.segment_id,
+                "original_frames": len(self.ref["controls"]),
+                "best_frames": len(self.best_individual) if self.best_individual is not None else None,
+                "frames_saved": (len(self.ref["controls"]) - len(self.best_individual)) if self.best_individual is not None else None,
+                "fitness_history": getattr(self, "fitness_history", []),
+                "max_dev_history": getattr(self, "max_dev_history", [])
+            }
+            stats_file = Path("genetic_data/stats") / f"segment_{self.segment_id}_stats.json"
+            stats_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(stats_file, "w") as f:
+                json.dump(stats, f, indent=2)
+            print(f"\nSTATS SAVED → {stats_file.name}")
             return
 
         if time.time() - getattr(self, "last_time", 0) < 3.0:
@@ -244,36 +274,18 @@ class GAInGame:
             self.best_individual = scored[0][1].copy()
             path, collisions = self.simulate(self.best_individual)
 
-            # Calculate reached
-            for cp in self.checkpoints:
-                cp['passed'] = False
-            reached = 0
-            prev_pos = path[0]
-            for pos in path[1:]:
-                for cp in self.checkpoints:
-                    if not cp['passed']:
-                        if self._did_cross_checkpoint(prev_pos, pos, cp):
-                            cp['passed'] = True
-                            reached += 1
-                prev_pos = pos
-            total_cp = len(self.checkpoints)
+            # === COLLECT STATS: fitness + max deviation ===
+            if not hasattr(self, "fitness_history"):
+                self.fitness_history = []
+                self.max_dev_history = []
 
-            # Only update line if path has points
-            if len(path) > 1:
-                verts = [Vec3(*p) for p in path]
-                if not hasattr(self.best_line, 'model') or self.best_line.model is None:
-                    self.best_line.model = Mesh(vertices=verts, mode='line', thickness=8)
-                else:
-                    self.best_line.model.vertices = verts
-                    self.best_line.model.generate()
+            # Calculate max deviation from human path
+            ref_pos = self.ref["positions"][:, :2]
+            dists = np.min(np.linalg.norm(ref_pos[None, :, :] - path[:, None, :2], axis=-1), axis=1)
+            max_dev = np.max(dists)
 
-            out = OUTPUT_BEST / f"real_best_segment_{self.segment_id}.json"
-            with open(out, "w") as f:
-                json.dump(self.best_individual.tolist(), f, indent=2)
-            print(f"GEN {self.generation} | NEW BEST | Score: {self.best_score:.1f} | Collisions: {collisions} | Checkpoints: {reached}/{total_cp}")
-            self.best_score = scored[0][0]
-            self.best_individual = scored[0][1].copy()
-            path, collisions = self.simulate(self.best_individual)
+            self.fitness_history.append(float(self.best_score))
+            self.max_dev_history.append(float(max_dev))
 
             # Calculate reached
             for cp in self.checkpoints:
