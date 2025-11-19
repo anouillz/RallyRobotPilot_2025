@@ -1,4 +1,3 @@
-
 from rallyrobopilot.game_launcher import prepare_game_app
 from ursina import *
 import json
@@ -8,7 +7,7 @@ import math
 from pathlib import Path
 
 # ================= CONFIGURATION =================
-SEGMENT_ID = 6                          
+SEGMENT_ID = 9                         
 POPULATION_SIZE = 100                    
 ELITE_SIZE = 15                         
 MUTATION_RATE = 0.6                    # Increased for more diversity
@@ -90,7 +89,7 @@ class GAInGame:
     def create_population(self):
         pop = [self.ref["controls"].copy() for _ in range(POPULATION_SIZE)]
         for ind in pop:
-            ind += np.random.normal(0, 0.3, ind.shape)  
+            ind += np.random.normal(0, 0.3, ind.shape)  # Increased initial noise
             np.clip(ind, 0, 1, out=ind)
         return pop
 
@@ -189,7 +188,7 @@ class GAInGame:
     def fitness(self, individual):
         path, collisions = self.simulate(individual)
         if collisions > 0:
-            return -1e19
+            return -1e15
 
         # Reset passed
         for cp in self.checkpoints:
@@ -294,12 +293,12 @@ class GAInGame:
         for gc in self.ghost_cars:
             destroy(gc)
         self.ghost_cars = []
-        for score, ind in scored[:5]:  # Show only top 5 ghost cars
+        for i, (_, ind) in enumerate(scored[:5]):  # Show only top 5 ghost cars
             path, _ = self.simulate(ind.tolist())
             if len(path) > 1:
                 gc = GhostCar(path, self)
                 # Make the best individual green
-                if np.array_equal(ind, self.best_individual):
+                if i == 0:
                     gc.color = color.green
                 self.ghost_cars.append(gc)
 
@@ -325,7 +324,7 @@ if __name__ == "__main__":
         ga.update()
 
         # Increment global step slower for synchronization
-        ga.global_step += 0.3  
+        ga.global_step += 0.3 
 
         # Move the car along the reference path
         idx = int(ga.global_step) % len(ga.ref["positions"])
@@ -335,3 +334,4 @@ if __name__ == "__main__":
         ga.car.update_camera()  # Update camera to follow the car
 
     app.run()
+
