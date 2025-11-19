@@ -16,7 +16,7 @@ sign = lambda x: -1 if x < 0 else (1 if x > 0 else 0)
 Text.default_resolution = 1080 * Text.size
 
 #FPS = 50
-delta_t = 0.027
+delta_t = 0.01
 
 
 class Car(Entity):
@@ -395,6 +395,8 @@ class Car(Entity):
                 self.velocity_y -= 50 * delta_t
 
     def update(self):
+        if hasattr(self, 'follow_path') and self.follow_path:
+            return
         dt_real = real_time.time() - self.last_real_time
         self.count += dt_real
         self.last_real_time = real_time.time()
@@ -607,7 +609,7 @@ class Car(Entity):
         self.pivot.position = self.position
 
         # Update checkpoint handler
-        if self.checkpoint_handler:
+        if self.checkpoint_handler and not getattr(self, 'disable_checkpoint_check', False):
             self.checkpoint_handler.update()
             self.checkpoint_handler.check_passed_checkpoints(self.position)
 
