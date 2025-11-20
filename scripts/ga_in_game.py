@@ -1,3 +1,4 @@
+# ga_in_game.py — FINAL: EVOLVES + SAVES FRAMES + PERFECT LINES
 from rallyrobopilot.game_launcher import prepare_game_app
 from ursina import *
 import json
@@ -7,22 +8,20 @@ import math
 from pathlib import Path
 
 # ================= CONFIGURATION =================
-SEGMENT_ID = 16                         
-POPULATION_SIZE = 100                    
-ELITE_SIZE = 15                         
-MUTATION_RATE = 0.6                    # Increased for more diversity
-MUTATION_STRENGTH = 0.8                # Increased for stronger mutations
+SEGMENT_ID = 16
+POPULATION_SIZE = 80
+ELITE_SIZE = 20
+MUTATION_RATE = 0.25          # HIGH — real diversity
+MUTATION_STRENGTH = 0.45      # HIGH — strong mutations
 GENERATIONS = 20
 SEGMENT_FOLDER = "genetic_data/records/SimpleTrack/segments"
 OUTPUT_BEST = Path("genetic_data/best_segments/SimpleTrack")
 OUTPUT_BEST.mkdir(parents=True, exist_ok=True)
 TRACK_NAME = "SimpleTrack"
 
-# Data collection for plotting
-STATS_FILE = Path(f"genetic_data/stats/segment_{SEGMENT_ID}_stats.json")
+# Stats
+STATS_FILE = Path(f"genetic_data/stats/new_segment_{SEGMENT_ID}_stats.json")
 STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-# Will store: frames_saved, fitness_history, max_dev_history
 stats = {
     "segment_id": SEGMENT_ID,
     "original_frames": 0,
@@ -48,7 +47,6 @@ class GhostCar(Entity):
         idx = int(self.ga.global_step) % len(self.path)
         pos = self.path[idx]
         self.position = Vec3(*pos)
-        # Calculate rotation to face the next position
         next_idx = (idx + 1) % len(self.path)
         next_pos = self.path[next_idx]
         dx = next_pos[0] - pos[0]
@@ -64,30 +62,24 @@ class GAInGame:
         self.segment_id = SEGMENT_ID
         self.track_name = TRACK_NAME
         self.ref = self.load_reference()
-        # stats - Save original frame count for stats
-        stats["original_frames"] = len(self.ref["controls"])
+        stats["original_frames"] = len(self.ref["controls"])  # ← saved
         self.checkpoints = self.load_checkpoints()
         self.population = self.create_population()
         self.generation = 0
         self.best_score = -1e20
-        self.best_line = Entity(color=color.lime)  # Create empty entity without model
-        self.ghost_cars = []  # Track ghost cars to destroy them later
-        self.global_step = 0.0  # Global step for synchronization
+        self.best_line = Entity(color=color.lime)
+        self.ghost_cars = []
+        self.global_step = 0.0
 
-        # UI Text for generation
         self.gen_text = Text(text=f"GEN {self.generation}", position=(0.5, -0.4), scale=1, color=color.black)
 
-        # Set car to segment start position and angle
         self.car.position = Vec3(*self.ref["positions"][0])
         self.car.rotation_y = self.ref["angles"][0]
 
-        # Set checkpoint handler to start from this segment
         if self.car.checkpoint_handler:
             self.car.checkpoint_handler.next_checkpoint_index = self.segment_id
 
-        # Disable checkpoint checking for GA to avoid order errors
         self.car.disable_checkpoint_check = True
-
 
         print(f"GA IN-GAME STARTED — Segment {self.segment_id}")
 
@@ -106,7 +98,6 @@ class GAInGame:
         if file.exists():
             with open(file) as f:
                 cps = json.load(f)
-                # Select checkpoints for this segment: seg 0 uses 0-1, seg 1 uses 1-2, etc.
                 start_idx = self.segment_id
                 end_idx = self.segment_id + 2
                 selected_cps = cps[start_idx:end_idx] if end_idx <= len(cps) else cps[start_idx:]
@@ -117,10 +108,15 @@ class GAInGame:
             return []
 
     def create_population(self):
-        pop = [self.ref["controls"].copy() for _ in range(POPULATION_SIZE)]
-        for ind in pop:
-            ind += np.random.normal(0, 0.3, ind.shape)  # Increased initial noise
-            np.clip(ind, 0, 1, out=ind)
+        pop = []
+        for _ in range(POPULATION_SIZE):
+            # Variable length: 60% to 140% of original
+            length = int(len(self.ref["controls"]) * random.uniform(0.6, 1.4))
+            length = max(10, length)
+            base = np.tile(self.ref["controls"], (int(np.ceil(length / len(self.ref["controls"]))), 1))[:length]
+            base += np.random.normal(0, 0.3, base.shape)
+            np.clip(base, 0, 1, out=base)
+            pop.append(base)
         return pop
 
     def crossover(self, p1, p2):
@@ -136,6 +132,7 @@ class GAInGame:
         return ind
 
     def _did_cross_checkpoint(self, prev_pos, curr_pos, checkpoint):
+        # (your existing function — unchanged)
         prev = tuple(prev_pos) if hasattr(prev_pos, "__iter__") else prev_pos
         curr = tuple(curr_pos) if hasattr(curr_pos, "__iter__") else curr_pos
         cp = tuple(checkpoint["position"])
@@ -176,12 +173,12 @@ class GAInGame:
         has_printed_collision = False
 
         for i, action in enumerate(individual):
-            w, s, a, d = action 
-            accel = (w - s) * 28 
+            w, s, a, d = action
+            accel = (w - s) * 28
             steer = (d - a) * 9.5
 
             speed += accel * dt
-            speed = np.clip(speed, -10, 52)  
+            speed = np.clip(speed, -10, 52)
 
             if abs(speed) > 0.5:
                 radius = max(1.8, pow(abs(speed)/50, 1.45) * 25 + 1.5)
@@ -191,22 +188,20 @@ class GAInGame:
             dx = math.sin(math.radians(angle)) * speed * dt
             dz = math.cos(math.radians(angle)) * speed * dt
 
-            # Check for collision every 5 steps
             if i % 5 == 0:
                 dist = math.sqrt(dx**2 + dz**2)
-                if dist > 0.1:  # Only check if moving significantly
+                if dist > 0.1:
                     direction = Vec3(dx/dist, 0, dz/dist)
                     hit = raycast(
-                        origin=Vec3(pos[0], pos[1] + 1, pos[2]),  # Start from above to avoid self-collision
+                        origin=Vec3(pos[0], pos[1] + 1, pos[2]),
                         direction=direction,
-                        distance=dist + 1,  # Shorter check
-                        ignore=[self.car]  # Ignore the real car
+                        distance=dist + 1,
+                        ignore=[self.car]
                     )
                     if hit and hit.distance < dist + 1:
                         collision_counter += 1
-                        speed *= 0.5  # Penalty for collision
+                        speed *= 0.5
                         if not has_printed_collision:
-                            #print("COLLISION")
                             has_printed_collision = True
 
             pos[0] += dx
@@ -236,27 +231,39 @@ class GAInGame:
 
         total_cp = len(self.checkpoints)
         missing = total_cp - reached
+
+        # === REWARD FEWER FRAMES (FASTER PATH) ===
+        frames_used = len(individual)
+        original_frames = len(self.ref["controls"])
+        frames_saved = original_frames - frames_used
+        time_saved_bonus = frames_saved * 50
+
         dist_traveled = np.sum(np.linalg.norm(np.diff(path, axis=0), axis=1))
         end_error = np.linalg.norm(path[-1] - self.ref["positions"][-1])
-        score = - (dist_traveled + missing * 1000 + end_error * 10)  # Minimize dist, missing, and end error
+
+        score = (
+            dist_traveled * 18
+            + time_saved_bonus
+            - missing * 10000
+            - end_error * 500
+        )
         return score
 
     def update(self):
         if self.generation >= GENERATIONS:
-            # Save final stats when done
+            # Save final stats
             stats = {
                 "segment_id": self.segment_id,
                 "original_frames": len(self.ref["controls"]),
                 "best_frames": len(self.best_individual) if self.best_individual is not None else None,
-                "frames_saved": (len(self.ref["controls"]) - len(self.best_individual)) if self.best_individual is not None else None,
                 "fitness_history": getattr(self, "fitness_history", []),
                 "max_dev_history": getattr(self, "max_dev_history", [])
             }
-            stats_file = Path("genetic_data/stats") / f"segment_{self.segment_id}_stats.json"
-            stats_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(stats_file, "w") as f:
+            stats["frames_saved"] = stats["original_frames"] - stats["best_frames"] if stats["best_frames"] else None
+
+            with open(STATS_FILE, "w") as f:
                 json.dump(stats, f, indent=2)
-            print(f"\nSTATS SAVED → {stats_file.name}")
+            print(f"\nFINAL STATS SAVED → {STATS_FILE.name}")
             return
 
         if time.time() - getattr(self, "last_time", 0) < 3.0:
@@ -274,12 +281,11 @@ class GAInGame:
             self.best_individual = scored[0][1].copy()
             path, collisions = self.simulate(self.best_individual)
 
-            # === COLLECT STATS: fitness + max deviation ===
+            # === COLLECT STATS ===
             if not hasattr(self, "fitness_history"):
                 self.fitness_history = []
                 self.max_dev_history = []
 
-            # Calculate max deviation from human path
             ref_pos = self.ref["positions"][:, :2]
             dists = np.min(np.linalg.norm(ref_pos[None, :, :] - path[:, None, :2], axis=-1), axis=1)
             max_dev = np.max(dists)
@@ -310,20 +316,20 @@ class GAInGame:
                     self.best_line.model.vertices = verts
                     self.best_line.model.generate()
 
-            out = OUTPUT_BEST / f"real_best_segment_{self.segment_id}.json"
+            out = OUTPUT_BEST / f"best_segment_{self.segment_id}.json"
             with open(out, "w") as f:
                 json.dump(self.best_individual.tolist(), f, indent=2)
-            print(f"GEN {self.generation} | NEW BEST | Score: {self.best_score:.1f} | Collisions: {collisions} | Checkpoints: {reached}/{total_cp}")
+            frames_saved = len(self.ref["controls"]) - len(self.best_individual)
+            print(f"GEN {self.generation} | NEW BEST | Score: {self.best_score:.1f} | Frames saved: {frames_saved}")
 
         # Show ghost cars
         for gc in self.ghost_cars:
             destroy(gc)
         self.ghost_cars = []
-        for i, (_, ind) in enumerate(scored[:5]):  # Show only top 5 ghost cars
+        for i, (_, ind) in enumerate(scored[:5]):
             path, _ = self.simulate(ind.tolist())
             if len(path) > 1:
                 gc = GhostCar(path, self)
-                # Make the best individual green
                 if i == 0:
                     gc.color = color.green
                 self.ghost_cars.append(gc)
@@ -344,20 +350,13 @@ class GAInGame:
 if __name__ == "__main__":
     app, car = prepare_game_app("SimpleTrack")
     ga = GAInGame(car)
-    #EditorCamera()
 
     def update():
         ga.update()
-
-        # Increment global step slower for synchronization
-        ga.global_step += 0.3 
-
-        # Move the car along the reference path
+        ga.global_step += 0.3
         idx = int(ga.global_step) % len(ga.ref["positions"])
         ga.car.position = Vec3(*ga.ref["positions"][idx])
         ga.car.rotation_y = ga.ref["angles"][idx]
-
-        ga.car.update_camera()  # Update camera to follow the car
+        ga.car.update_camera()
 
     app.run()
-

@@ -1,4 +1,4 @@
-# ga_plots.py — ULTIMATE PLOTS: Trajectory + Stats (fitness, deviation, frames saved)
+# ga_plots.py — ULTIMATE PLOTS: Trajectory + Frames Saved + Fitness + Deviation
 import json
 import numpy as np
 import math
@@ -10,7 +10,7 @@ from matplotlib.patches import Polygon
 TRACK_NAME = "SimpleTrack"
 SEGMENT_FOLDER = f"genetic_data/records/{TRACK_NAME}/segments"
 BEST_FOLDER = f"genetic_data/best_segments/{TRACK_NAME}"
-STATS_FOLDER = "genetic_data/stats"  # your stats files
+STATS_FOLDER = "genetic_data/stats"
 OBSTACLES_OBJ = f"assets/{TRACK_NAME}/Obstacles.obj"
 CHECKPOINTS_FILE = f"assets/{TRACK_NAME}/checkpoints.json"
 METADATA_FILE = f"assets/{TRACK_NAME}/track_metadata.json"
@@ -81,8 +81,8 @@ def simulate(individual, start_pos, start_angle, start_speed):
     return np.array(path)
 
 # Process each segment
-best_files = sorted(Path(BEST_FOLDER).glob("real_best_segment_*.json"))
-total_saved = 0
+best_files = sorted(Path(BEST_FOLDER).glob("best_segment_*.json"))
+total_saved_frames = 0
 
 for best_file in best_files:
     seg_id = int(best_file.stem.split("_")[-1])
@@ -108,8 +108,9 @@ for best_file in best_files:
     ga_path = simulate(ga_controls, start_pos, start_angle, start_speed)
     ga_frames = len(ga_controls)
 
+    # Frames & time saved
     frames_saved = original_frames - ga_frames
-    total_saved += frames_saved
+    total_saved_frames += frames_saved
 
     # === 1. TRAJECTORY PLOT ===
     plt.figure(figsize=(16, 12))
@@ -131,9 +132,8 @@ for best_file in best_files:
     plt.plot(start_pos[0], start_pos[2], 'lime', marker='o', markersize=22, markeredgecolor='black', label="Start", zorder=11)
     plt.plot(ga_path[-1,0], ga_path[-1,2], 'red', marker='*', markersize=28, markeredgecolor='black', label="End", zorder=11)
 
-    end_error = np.linalg.norm(ga_path[-1][:2] - human_pos[-1][:2])
-
-    plt.title(f"Segment {seg_id} — Frames saved: {frames_saved} ({frames_saved*0.027:.2f}s)\nEnd error: {end_error:.4f}m", fontsize=21, fontweight='bold', color='white')
+    plt.title(f"Segment {seg_id}\nFrames saved: {frames_saved}",
+              fontsize=21, fontweight='bold', color='white', pad=30)
     plt.legend(fontsize=15)
     plt.grid(alpha=0.25)
     ax = plt.gca()
@@ -150,7 +150,7 @@ for best_file in best_files:
     plt.savefig(plot_file, dpi=400, bbox_inches='tight', facecolor='#0f0f0f')
     plt.close()
 
-    # === 2. STATS PLOTS (if stats exist) ===
+    # === 2. STATS PLOTS (fitness + deviation) ===
     if stats_file.exists():
         with open(stats_file) as f:
             stats = json.load(f)
@@ -188,5 +188,5 @@ for best_file in best_files:
         plt.close()
 
 print(f"\nALL PLOTS DONE — {len(best_files)} segments")
-print(f"Total frames saved: {total_saved} → {total_saved*0.027:.2f} seconds faster!")
-print(f"Check: {PLOT_FOLDER}")
+print(f"TOTAL FRAMES SAVED: {total_saved_frames}")
+print(f"Check folder: {PLOT_FOLDER}")
